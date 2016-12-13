@@ -23,6 +23,7 @@ import com.google.zxing.Result;
 import com.google.zxing.ResultPoint;
 import com.google.zxing.ResultPointCallback;
 import com.google.zxing.common.BitArray;
+import com.google.zxing.common.detector.MathUtils;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -71,13 +72,9 @@ public final class RSS14Reader extends AbstractRSSReader {
     Pair rightPair = decodePair(row, true, rowNumber, hints);
     addOrTally(possibleRightPairs, rightPair);
     row.reverse();
-    int lefSize = possibleLeftPairs.size();
-    for (int i = 0; i < lefSize; i++) {
-      Pair left = possibleLeftPairs.get(i);
+    for (Pair left : possibleLeftPairs) {
       if (left.getCount() > 1) {
-        int rightSize = possibleRightPairs.size();
-        for (int j = 0; j < rightSize; j++) {
-          Pair right = possibleRightPairs.get(j);
+        for (Pair right : possibleRightPairs) {
           if (right.getCount() > 1) {
             if (checkChecksum(left, right)) {
               return constructResult(left, right);
@@ -136,7 +133,7 @@ public final class RSS14Reader extends AbstractRSSReader {
     ResultPoint[] leftPoints = leftPair.getFinderPattern().getResultPoints();
     ResultPoint[] rightPoints = rightPair.getFinderPattern().getResultPoints();
     return new Result(
-        String.valueOf(buffer.toString()),
+        buffer.toString(),
         null,
         new ResultPoint[] { leftPoints[0], leftPoints[1], rightPoints[0], rightPoints[1], },
         BarcodeFormat.RSS_14);
@@ -162,7 +159,7 @@ public final class RSS14Reader extends AbstractRSSReader {
 
   private Pair decodePair(BitArray row, boolean right, int rowNumber, Map<DecodeHintType,?> hints) {
     try {
-      int[] startEnd = findFinderPattern(row, 0, right);
+      int[] startEnd = findFinderPattern(row, right);
       FinderPattern pattern = parseFoundFinderPattern(row, rowNumber, right, startEnd);
 
       ResultPointCallback resultPointCallback = hints == null ? null :
@@ -213,7 +210,7 @@ public final class RSS14Reader extends AbstractRSSReader {
     }
 
     int numModules = outsideChar ? 16 : 15;
-    float elementWidth = (float) count(counters) / (float) numModules;
+    float elementWidth = MathUtils.sum(counters) / (float) numModules;
 
     int[] oddCounts = this.getOddCounts();
     int[] evenCounts = this.getEvenCounts();
@@ -221,7 +218,7 @@ public final class RSS14Reader extends AbstractRSSReader {
     float[] evenRoundingErrors = this.getEvenRoundingErrors();
 
     for (int i = 0; i < counters.length; i++) {
-      float value = (float) counters[i] / elementWidth;
+      float value = counters[i] / elementWidth;
       int count = (int) (value + 0.5f); // Round
       if (count < 1) {
         count = 1;
@@ -254,7 +251,7 @@ public final class RSS14Reader extends AbstractRSSReader {
       evenChecksumPortion += evenCounts[i];
       evenSum += evenCounts[i];
     }
-    int checksumPortion = oddChecksumPortion + 3*evenChecksumPortion;
+    int checksumPortion = oddChecksumPortion + 3 * evenChecksumPortion;
 
     if (outsideChar) {
       if ((oddSum & 0x01) != 0 || oddSum > 12 || oddSum < 4) {
@@ -284,7 +281,7 @@ public final class RSS14Reader extends AbstractRSSReader {
 
   }
 
-  private int[] findFinderPattern(BitArray row, int rowOffset, boolean rightFinderPattern)
+  private int[] findFinderPattern(BitArray row, boolean rightFinderPattern)
       throws NotFoundException {
 
     int[] counters = getDecodeFinderCounters();
@@ -295,6 +292,7 @@ public final class RSS14Reader extends AbstractRSSReader {
 
     int width = row.getSize();
     boolean isWhite = false;
+    int rowOffset = 0;
     while (rowOffset < width) {
       isWhite = !row.get(rowOffset);
       if (rightFinderPattern == isWhite) {
@@ -307,7 +305,7 @@ public final class RSS14Reader extends AbstractRSSReader {
     int counterPosition = 0;
     int patternStart = rowOffset;
     for (int x = rowOffset; x < width; x++) {
-      if (row.get(x) ^ isWhite) {
+      if (row.get(x) != isWhite) {
         counters[counterPosition]++;
       } else {
         if (counterPosition == 3) {
@@ -337,7 +335,7 @@ public final class RSS14Reader extends AbstractRSSReader {
     boolean firstIsBlack = row.get(startEnd[0]);
     int firstElementStart = startEnd[0] - 1;
     // Locate element 1
-    while (firstElementStart >= 0 && firstIsBlack ^ row.get(firstElementStart)) {
+    while (firstElementStart >= 0 && firstIsBlack != row.get(firstElementStart)) {
       firstElementStart--;
     }
     firstElementStart++;
@@ -359,11 +357,8 @@ public final class RSS14Reader extends AbstractRSSReader {
 
   private void adjustOddEvenCounts(boolean outsideChar, int numModules) throws NotFoundException {
 
-    int oddSum = count(getOddCounts());
-    int evenSum = count(getEvenCounts());
-    int mismatch = oddSum + evenSum - numModules;
-    boolean oddParityBad = (oddSum & 0x01) == (outsideChar ? 1 : 0);
-    boolean evenParityBad = (evenSum & 0x01) == 1;
+    int oddSum = MathUtils.sum(getOddCounts());
+    int evenSum = MathUtils.sum(getEvenCounts());
 
     boolean incrementOdd = false;
     boolean decrementOdd = false;
@@ -394,6 +389,9 @@ public final class RSS14Reader extends AbstractRSSReader {
       }
     }
 
+    int mismatch = oddSum + evenSum - numModules;
+    boolean oddParityBad = (oddSum & 0x01) == (outsideChar ? 1 : 0);
+    boolean evenParityBad = (evenSum & 0x01) == 1;
     /*if (mismatch == 2) {
       if (!(oddParityBad && evenParityBad)) {
         throw ReaderException.getInstance();
@@ -406,7 +404,7 @@ public final class RSS14Reader extends AbstractRSSReader {
       }
       incrementOdd = true;
       incrementEven = true;
-    } else */if (mismatch == 1) {
+    } else */ if (mismatch == 1) {
       if (oddParityBad) {
         if (evenParityBad) {
           throw NotFoundException.getNotFoundInstance();
